@@ -20,7 +20,8 @@ Configures the plugin for this user. Everything user-specific lives in
   and the Notion MCP connector is available, offer to create one:
   create a database titled "Agent Skills" with properties
   `Name` (title), `Trigger` (rich_text), `Status` (select: active / draft / archived),
-  `Category` (select), `Description` (rich_text).
+  `Category` (select), `Runtime` (select: any / claude-code / notion),
+  `Description` (rich_text).
 
 ## Step 2: Resolve the data_source_id
 
@@ -44,7 +45,9 @@ Query one page (page_size: 1) and inspect the property names. Required:
 | name | `Name` | title |
 | trigger | `Trigger` | rich_text |
 
-Optional: `Status` (select/status), `Category` (select).
+Optional: `Status` (select/status), `Category` (select),
+`Runtime` (select: any / claude-code / notion — lets Notion AI and other agents
+skip skills that need Claude Code's local tools).
 
 If the database uses different property names (e.g. a Japanese schema), map them
 in `properties` below instead of asking the user to rename anything.
@@ -88,6 +91,9 @@ Run the sync (see the `sync` skill — script if token/ntn, manual if MCP-only).
   - mcp: run `/notion-skills:sync` after changing names/triggers/statuses in Notion
 - Remind: page **content** edits apply immediately; only name/trigger/status
   changes need a sync. New sessions pick up the registry automatically.
+- If the Notion MCP connector is available, mention that the same database also
+  works as a skill store for Notion AI — see "Use the same skills from Notion AI"
+  in the plugin README for the recommended agent instruction.
 
 ## Security note (always tell the user once during setup)
 

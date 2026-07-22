@@ -30,8 +30,9 @@ the sync yourself:
 
 1. Read `config.json` for `data_source_id`, `properties`, `excluded_status`.
 2. Query all pages: `notion-query-data-sources` with
-   `SELECT "Name", "Trigger", "Status", "Category" FROM "collection://<data_source_id>"`
-   (substitute mapped property names). Fetch all pages, not just the first batch.
+   `SELECT "Name", "Trigger", "Status", "Category", "Runtime" FROM "collection://<data_source_id>"`
+   (substitute mapped property names; omit columns the database doesn't have).
+   Fetch all pages, not just the first batch.
 3. Filter out pages whose status is in `excluded_status` (case-insensitive).
    Keep pages with no status.
 4. Build the registry and WRITE it to `~/.claude/notion-skills/registry.md`
@@ -39,8 +40,8 @@ the sync yourself:
 
 ```
 <!-- notion-skills registry | synced: <ISO8601 UTC now> | count: <N> | source: <data_source_id> -->
-<!-- format: name | page_id (dashless) | category | trigger keywords -->
-<name> | <page_id without dashes> | <category or -> | <trigger keywords, ≤100 chars>
+<!-- format: name | page_id (dashless) | runtime | category | trigger keywords -->
+<name> | <page_id without dashes> | <runtime, default any> | <category or -> | <trigger keywords, ≤100 chars>
 ...
 ```
 

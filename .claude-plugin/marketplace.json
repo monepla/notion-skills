@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "notion-skills",
-      "description": "Use a Notion database as your personal skill store. Register skills as Notion pages (name + trigger keywords + instructions), and this plugin routes matching requests to them, keeps a local registry in sync, and lets you create new skills from chat.",
+      "description": "Use a Notion database as your personal, agent-agnostic skill store. Register skills as Notion pages (name + trigger keywords + instructions); this plugin routes matching Claude Code requests to them and keeps a local registry in sync — while Notion AI and other agents consume the same skills directly.",
       "category": "productivity",
       "source": "./"
     }

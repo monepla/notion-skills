@@ -30,6 +30,12 @@ export const DEFAULT_CONFIG = {
     trigger: 'Trigger',
     status: 'Status',
     category: 'Category',
+    // Which AI runtimes can execute this skill:
+    //   any         portable (knowledge / procedures / Notion operations)
+    //   claude-code needs local tools (shell, repo, MCP servers)
+    //   notion      Notion AI / Notion Agents only
+    // Pages without the property default to 'any'.
+    runtime: 'Runtime',
   },
   // Pages whose status matches one of these are excluded (case-insensitive).
   // Pages with NO status are included, so a status property is optional.
@@ -81,17 +87,17 @@ export function dashless(id) {
 
 /**
  * Render the registry cache file. One line per skill:
- *   name | id32 | category | triggers
+ *   name | id32 | runtime | category | triggers
  * Header carries sync metadata that session-start.mjs parses for staleness.
  */
 export function renderRegistry(rows, dataSourceId, syncedAtIso) {
   const lines = [
     `<!-- notion-skills registry | synced: ${syncedAtIso} | count: ${rows.length} | source: ${dataSourceId} -->`,
-    '<!-- format: name | page_id (dashless) | category | trigger keywords -->',
+    '<!-- format: name | page_id (dashless) | runtime | category | trigger keywords -->',
   ];
   for (const row of rows) {
     lines.push(
-      [row.name, dashless(row.id), row.category || '-', row.trigger || '-']
+      [row.name, dashless(row.id), row.runtime || 'any', row.category || '-', row.trigger || '-']
         .map((field) => String(field).replace(/\|/g, '\\|'))
         .join(' | '),
     );

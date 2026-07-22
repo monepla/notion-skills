@@ -32,6 +32,14 @@ If the file is missing, stop and tell the user to run `/notion-skills:setup` fir
    tool names — the words a user would actually type.
 4. **Steps** — the main workflow
 5. **Inputs / outputs** — what the user provides, what the skill produces
+6. **Runtime** — where the skill can execute. Infer it from the steps and confirm:
+   - `any` — knowledge, procedures, Notion operations (also usable by Notion AI / other agents)
+   - `claude-code` — needs shell, repositories, local files, or MCP servers
+   - `notion` — written specifically for Notion AI / Notion Agents
+
+   Prefer `any` when possible: write steps in tool-neutral terms so the same
+   skill works from Notion AI too. Only mark `claude-code` when local tools are
+   genuinely unavoidable.
 
 ## Step 2: Create the page
 
@@ -42,6 +50,8 @@ or the REST API — whichever transport is available) with properties:
 - `<Trigger>`: trigger keywords
 - `<Status>`: `active` (use `draft` if the user wants to review first)
 - `<Category>`: if the database has one
+- `<Runtime>`: `any` / `claude-code` / `notion` (if the database has the property;
+  suggest adding it when missing — it lets Notion AI skip non-portable skills)
 
 Page content template:
 

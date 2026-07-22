@@ -52,6 +52,8 @@ function buildRows(pages, config) {
     rows.push({
       id: page.id,
       name,
+      // Missing Runtime property (or empty) means the skill is portable.
+      runtime: selectName(page.properties?.[map.runtime]).toLowerCase() || 'any',
       category: selectName(page.properties?.[map.category]),
       trigger: truncate(trigger, config.max_trigger_chars),
     });

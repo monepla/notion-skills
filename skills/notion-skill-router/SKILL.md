@@ -22,8 +22,14 @@ The registry is injected at session start inside `<notion-skills-registry>` tags
 Line format:
 
 ```
-name | page_id (32 hex chars, dashless) | category | trigger keywords
+name | page_id (32 hex chars, dashless) | runtime | category | trigger keywords
 ```
+
+`runtime` declares where the skill can execute: `any` (portable), `claude-code`
+(needs local tools — shell, repos, MCP servers), `notion` (written for Notion AI /
+Notion Agents). In a Claude Code session, `any` and `claude-code` run normally;
+for a `notion` skill, still fetch and try, but tell the user it was written for
+Notion AI if its steps assume Notion-Agent-only capabilities.
 
 If there is no registry block in context:
 - If the plugin is not set up → tell the user to run `/notion-skills:setup <DB URL>`.

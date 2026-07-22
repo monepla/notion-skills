@@ -9,6 +9,12 @@ plugin injects a compact registry of your skills into every session, routes
 matching requests to the right Notion page, and keeps the registry in sync as
 you add, rename, or archive skills — no code changes, no plugin updates.
 
+Because skills are plain Notion pages — not code — the same store is
+**agent-agnostic**: Claude Code (this plugin), claude.ai (Notion connector),
+**Notion AI / Notion Agents (directly, no plugin needed)**, and anything else
+that can read Notion all execute the same skill definitions. Write a workflow
+once, run it from wherever you happen to be working.
+
 ```
 ┌──────────────────────┐        sync (script or /sync)       ┌───────────────────────────┐
 │  Your Notion DB      │ ──────────────────────────────────▶ │ ~/.claude/notion-skills/  │
@@ -46,6 +52,7 @@ MCP connector is available, it offers to create one with the right schema.
 | `Trigger` | rich_text | ✔ | Comma-separated activation keywords |
 | `Status` | select / status | – | `active` / `draft` / `archived` (`draft`, `archived`, `disabled` are excluded) |
 | `Category` | select | – | Grouping in listings |
+| `Runtime` | select | – | `any` (portable, default) / `claude-code` (needs shell, repos, MCP) / `notion` (Notion AI only) |
 | page content | – | ✔ | The skill's full instructions (its SKILL.md) |
 
 Different property names (e.g. a Japanese schema)? Map them in
@@ -95,6 +102,25 @@ Context cost: the injected registry is one line per skill (~15–25 tokens each)
 20 skills ≈ 400 tokens per session. Set `"injection": "off"` to trade that for
 an on-demand Notion query.
 
+## Use the same skills from Notion AI
+
+The database is the skill store; this plugin is just the Claude Code adapter.
+Notion AI / Notion Agents can consume it directly — add this to your Notion
+agent's custom instructions:
+
+> When a request matches the Trigger keywords of a page in **[link your skills
+> database]**, open that page and follow its content as instructions. Skip
+> pages whose Status is draft/archived or whose Runtime is `claude-code`.
+
+Guidelines that make skills portable:
+
+- Write steps in tool-neutral terms ("create a page in DB X", not "run
+  `ntn api …`") whenever the workflow allows it, and set `Runtime: any`.
+- Mark skills that genuinely need local tools (shell, repositories, MCP
+  servers) as `Runtime: claude-code` so Notion AI knows to skip them.
+- Page content edits propagate to **all** runtimes immediately — one edit,
+  every agent updated.
+
 ## Security
 
 **Skill page content is executed as instructions.** Point the router only at a
@@ -106,6 +132,13 @@ are read-only against the Notion API.
 
 Notion データベースを Claude Code の「スキルストア」にするプラグイン。
 DB の各ページ＝1スキル（本文が指示書、`Trigger` プロパティが発火キーワード）。
+
+スキルは「ただの Notion ページ」なので、ストアはエージェント非依存:
+Claude Code（本プラグイン）・claude.ai（Notion コネクタ）・**Notion AI / Notion
+エージェント（プラグイン不要で直接）**が同じスキル定義を実行できる。
+`Runtime` プロパティ（`any` / `claude-code` / `notion`）で、ローカルツールが
+必要なスキルを Notion AI 側にスキップさせられる（上記 "Use the same skills
+from Notion AI" の推奨エージェント指示を参照）。
 
 - 導入: 上記 Install の2コマンド → `/notion-skills:setup <DBのURL>`
 - ページ**本文**の編集は即時反映（毎回ライブ取得）。名前・トリガー・Status の変更は
