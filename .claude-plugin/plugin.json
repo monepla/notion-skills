@@ -1,0 +1,9 @@
+{
+  "name": "notion-skills",
+  "version": "0.1.0",
+  "description": "Use a Notion database as your personal skill store. Register skills as Notion pages (name + trigger keywords + instructions), and this plugin routes matching requests to them, keeps a local registry in sync, and lets you create new skills from chat.",
+  "author": {
+    "name": "monepla"
+  },
+  "homepage": "https://github.com/monepla/notion-skills"
+}

@@ -1,0 +1,15 @@
+{
+  "name": "notion-skills",
+  "description": "Marketplace for the notion-skills plugin — turn a Notion database into your personal, auto-syncing skill store for Claude Code",
+  "owner": {
+    "name": "monepla"
+  },
+  "plugins": [
+    {
+      "name": "notion-skills",
+      "description": "Use a Notion database as your personal skill store. Register skills as Notion pages (name + trigger keywords + instructions), and this plugin routes matching requests to them, keeps a local registry in sync, and lets you create new skills from chat.",
+      "category": "productivity",
+      "source": "./"
+    }
+  ]
+}

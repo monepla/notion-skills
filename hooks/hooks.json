@@ -1,0 +1,17 @@
+{
+  "description": "notion-skills — injects the user's Notion skill registry at session start and keeps the cache fresh",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.mjs\"",
+            "timeout": 10,
+            "statusMessage": "Loading Notion skill registry"
+          }
+        ]
+      }
+    ]
+  }
+}
