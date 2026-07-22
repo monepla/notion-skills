@@ -16,26 +16,42 @@ that can read Notion all execute the same skill definitions. Write a workflow
 once, run it from wherever you happen to be working.
 
 ```
-┌──────────────────────┐        sync (script or /sync)       ┌───────────────────────────┐
-│  Your Notion DB      │ ──────────────────────────────────▶ │ ~/.claude/notion-skills/  │
-│  Name│Trigger│Status │                                     │  config.json  registry.md │
-│  + page content      │ ◀── fetched live on every use ──┐   └────────────┬──────────────┘
-└──────────────────────┘                                 │                │ SessionStart hook
-                                                         │                ▼
-                                            ┌────────────┴────────────────────────┐
-                                            │  Claude session                     │
-                                            │  registry in context → router skill │
-                                            └─────────────────────────────────────┘
+┌──────────────────────────┐                          ┌───────────────────────────┐
+│ Your Notion DB           │   sync: script or /sync  │ ~/.claude/notion-skills/  │
+│ Name │ Trigger │ Status  │ ───────────────────────▶ │  config.json              │
+│ Runtime │ Category       │                          │  registry.md              │
+│ + page content           │                          └─────────────┬─────────────┘
+└──────────────────────────┘                                        │
+              ▲                                    SessionStart hook │ injects registry
+              │                                                      ▼
+              │  page content fetched   ┌─────────────────────────────────────────┐
+              └──────── live ───────────┤ Claude session → notion-skill-router    │
+                                        └─────────────────────────────────────────┘
 ```
 
+## Requirements
+
+- Claude Code with plugin support
+- **Node.js 18+** on `PATH` — the SessionStart hook and the sync script run on it
+- A Notion database you can edit, plus one of the three auth options below
+
 ## Install
+
+In a Claude Code session:
 
 ```
 /plugin marketplace add monepla/notion-skills
 /plugin install notion-skills@notion-skills
 ```
 
-Then, in any session:
+Or from a terminal:
+
+```bash
+claude plugin marketplace add monepla/notion-skills
+claude plugin install notion-skills@notion-skills
+```
+
+Then, in a **new** session (the hook loads at session start):
 
 ```
 /notion-skills:setup https://www.notion.so/<your-skills-database>
@@ -48,12 +64,12 @@ MCP connector is available, it offers to create one with the right schema.
 
 | Property | Type | Required | Purpose |
 |---|---|---|---|
-| `Name` | title | ✔ | Skill name |
-| `Trigger` | rich_text | ✔ | Comma-separated activation keywords |
-| `Status` | select / status | – | `active` / `draft` / `archived` (`draft`, `archived`, `disabled` are excluded) |
-| `Category` | select | – | Grouping in listings |
-| `Runtime` | select | – | `any` (portable, default) / `claude-code` (needs shell, repos, MCP) / `notion` (Notion AI only) |
+| `Name` | title | ✔ | Skill name. Pages with an empty name are skipped |
 | page content | – | ✔ | The skill's full instructions (its SKILL.md) |
+| `Trigger` | rich_text | recommended | Comma-separated activation keywords. Without it, routing falls back to matching the skill name alone |
+| `Status` | select / status | – | Pages whose value is in `excluded_status` (default: `draft`, `archived`, `disabled`) drop out of the registry. **Pages with no status are included**, so the property is optional |
+| `Category` | select | – | Grouping in listings |
+| `Runtime` | select | – | `any` (portable — default when absent) / `claude-code` (needs shell, repos, MCP) / `notion` (Notion AI only) |
 
 Different property names (e.g. a Japanese schema)? Map them in
 `~/.claude/notion-skills/config.json` → `properties` — no renaming needed.
@@ -64,14 +80,14 @@ Different property names (e.g. a Japanese schema)? Map them in
 |---|---|
 | Page **content** | Immediately (fetched live on every use) |
 | Name / Trigger / Status, new or archived skills | Next sync: automatic when the cache is older than `ttl_hours` (default 24h), or instantly via `/notion-skills:sync` |
-| The plugin itself | `/plugin` → update |
+| The plugin itself | `claude plugin update notion-skills@notion-skills` (or `/plugin`) — restart required |
 
 ## Auth — three ways, pick what you already have
 
 | You have | Sync runs | Notes |
 |---|---|---|
 | `NOTION_API_TOKEN` env var | Automatically, in the background | Create an [internal integration](https://www.notion.so/profile/integrations) and share your DB with it |
-| [Notion CLI](https://developers.notion.com/docs/get-started-with-the-notion-cli) (`ntn login`) | Automatically, in the background | Token stays in your OS keychain |
+| [Notion CLI](https://developers.notion.com/cli/get-started/overview) (`curl -fsSL https://ntn.dev \| bash`, then `ntn login`) | Automatically, in the background | Token stays in your OS keychain |
 | Notion MCP connector only | When you run `/notion-skills:sync` | Claude performs the sync in-session |
 
 The token is never written to any file by this plugin.
@@ -87,20 +103,32 @@ The token is never written to any file by this plugin.
 
 ## Configuration (`~/.claude/notion-skills/config.json`)
 
+Written by `setup`. Only `data_source_id` is required — every other key falls
+back to the default shown.
+
 ```jsonc
 {
-  "data_source_id": "…",           // set by setup
-  "transport": "auto",              // auto | token | ntn | mcp
-  "ttl_hours": 24,                  // cache age before background refresh
-  "injection": "session",           // session | off (off = router queries Notion directly)
-  "properties": { "name": "Name", "trigger": "Trigger", "status": "Status", "category": "Category" },
-  "excluded_status": ["archived", "draft", "disabled"]
+  "data_source_id": "…",     // set by setup
+  "transport": "auto",       // auto | token | ntn | mcp
+  "ttl_hours": 24,           // cache age that triggers a background refresh
+  "injection": "session",    // session | off (off = router queries Notion on demand)
+  "properties": {            // map logical fields → your database's property names
+    "name": "Name",
+    "trigger": "Trigger",
+    "status": "Status",
+    "category": "Category",
+    "runtime": "Runtime"
+  },
+  "excluded_status": ["archived", "draft", "disabled"],
+  "max_trigger_chars": 100   // trigger text is truncated at a comma boundary
 }
 ```
 
-Context cost: the injected registry is one line per skill (~15–25 tokens each).
-20 skills ≈ 400 tokens per session. Set `"injection": "off"` to trade that for
-an on-demand Notion query.
+Context cost: one line per skill — name, page ID, runtime, category, and
+trigger keywords. Measured on a 66-skill database: 9.9 KB, roughly 2.5k tokens
+per session (Japanese text; a mostly-English registry of the same size is
+smaller). A typical 20-skill store lands well under 1k. Set
+`"injection": "off"` to trade that for an on-demand Notion query.
 
 ## Use the same skills from Notion AI
 
@@ -121,6 +149,25 @@ Guidelines that make skills portable:
 - Page content edits propagate to **all** runtimes immediately — one edit,
   every agent updated.
 
+## Troubleshooting
+
+| Symptom | Check |
+|---|---|
+| No `[notion-skills]` line at session start | Is Node.js on `PATH`? Is the plugin enabled (`claude plugin list`)? Hooks load at session start — open a new session |
+| "Not configured yet" | Run `/notion-skills:setup <DB URL>` |
+| A new Notion skill isn't routed | `Status` not in `excluded_status`? Then `/notion-skills:sync` (or wait for the TTL refresh) |
+| Fetching a skill 404s | The registry is stale — `/notion-skills:sync` |
+| Sync says "Registry came out empty" | `data_source_id` or `properties` in `config.json` don't match the database |
+| Wrong property names | Map them in `config.json` → `properties`; don't rename anything in Notion |
+
+Escape hatches:
+
+- `NOTION_SKILLS_DISABLE=1` — skip registry injection for a session
+- `NOTION_SKILLS_HOME=/path` — use a different state directory
+- `NOTION_VERSION=…` — override the Notion API version used by the sync script
+- `claude plugin uninstall notion-skills@notion-skills` — remove the plugin.
+  Your `~/.claude/notion-skills/` state and your Notion database are untouched
+
 ## Security
 
 **Skill page content is executed as instructions.** Point the router only at a
@@ -140,7 +187,8 @@ Claude Code（本プラグイン）・claude.ai（Notion コネクタ）・**Not
 必要なスキルを Notion AI 側にスキップさせられる（上記 "Use the same skills
 from Notion AI" の推奨エージェント指示を参照）。
 
-- 導入: 上記 Install の2コマンド → `/notion-skills:setup <DBのURL>`
+- 前提: Node.js 18+ が PATH にあること（フックと同期スクリプトが使う）
+- 導入: 上記 Install の2コマンド → **新しいセッションで** `/notion-skills:setup <DBのURL>`
 - ページ**本文**の編集は即時反映（毎回ライブ取得）。名前・トリガー・Status の変更は
   自動同期（既定24h）か `/notion-skills:sync` で反映
 - 認証は `NOTION_API_TOKEN` / `ntn` CLI / Notion MCP コネクタの3系統。トークンを
