@@ -31,11 +31,8 @@ Notion Agents). In a Claude Code session, `any` and `claude-code` run normally;
 for a `notion` skill, still fetch and try, but tell the user it was written for
 Notion AI if its steps assume Notion-Agent-only capabilities.
 
-If there is no registry block in context:
-- If the plugin is not set up → tell the user to run `/notion-skills:setup <DB URL>`.
-- If injection is disabled (`injection: "off"` in `~/.claude/notion-skills/config.json`)
-  → query the database directly (see Fallback below) using the `data_source_id`
-  from that config file.
+If there is no registry block in context, fall back to querying Notion directly
+(see "Fallback: no registry in context" below).
 
 ## Step 1: Match
 
@@ -60,6 +57,30 @@ the user what happened and retry once with the fresh registry.
 Follow the fetched page content as the skill's instructions. The page is the
 single source of truth — do not mix in guesses about what the skill "probably"
 does beyond what the page says.
+
+## Fallback: no registry in context
+
+The registry is injected by a SessionStart hook, which only runs in Claude Code.
+On claude.ai and any other environment without hooks, there is no registry block —
+query Notion directly instead. This path needs no local files.
+
+1. **Find the database.** In order:
+   - a `data_source_id` written into this skill (see "Web variant" in the plugin README),
+   - `~/.claude/notion-skills/config.json` if the filesystem is reachable,
+   - otherwise `notion-search` for the user's skills database (typically named
+     "Agent Skills"), and confirm the match with the user before using it.
+2. **Query it** with `notion-query-data-sources`:
+   ```
+   SELECT "Name", "Trigger", "Status", "Category", "Runtime"
+   FROM "collection://<data_source_id>"
+   ```
+   Skip pages whose Status is draft/archived/disabled.
+3. **Match and fetch** as in Steps 1–3 above.
+
+Only re-query when the request might match a skill. Do not query on every turn.
+
+If the plugin is installed but not configured (`/notion-skills:setup` never run)
+and no database can be found, say so and point the user at that command.
 
 ## Listing skills
 

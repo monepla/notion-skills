@@ -130,6 +130,30 @@ per session (Japanese text; a mostly-English registry of the same size is
 smaller). A typical 20-skill store lands well under 1k. Set
 `"injection": "off"` to trade that for an on-demand Notion query.
 
+## Web variant (claude.ai)
+
+The SessionStart hook only runs in Claude Code, so on claude.ai there is no
+injected registry. Build a standalone skill that carries its own trigger
+keywords and queries Notion over the MCP connector instead:
+
+```bash
+node scripts/build-web-skill.mjs
+```
+
+This writes one or more `SKILL.md` files to `~/.claude/notion-skills/web-skill/`.
+Upload each as a skill in claude.ai (Settings → Capabilities). Requirements:
+
+- The Notion connector must be enabled in claude.ai, with your skills database shared to it.
+- Rebuild after adding, renaming, or archiving skills. Editing a skill's **page
+  content** needs no rebuild — pages are fetched live.
+
+claude.ai truncates a skill description at 1024 characters, and anything past
+the cut never matches. The build splits across multiple skill files as needed so
+that every skill name fits in some description (60 skills → 2 files).
+
+The output contains your database id and your skill names, so it is written to
+your state directory — never into this repository.
+
 ## Use the same skills from Notion AI
 
 The database is the skill store; this plugin is just the Claude Code adapter.
