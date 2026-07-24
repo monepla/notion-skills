@@ -40,6 +40,10 @@ export const DEFAULT_CONFIG = {
   // Pages whose status matches one of these are excluded (case-insensitive).
   // Pages with NO status are included, so a status property is optional.
   excluded_status: ['archived', 'draft', 'disabled'],
+  // Page IDs to keep out of the registry regardless of status — for reference
+  // pages, scratch notes, or superseded duplicates that live in the same
+  // database but should never be routed to. Dashes are optional.
+  excluded_pages: [],
   // Trigger text is truncated to this many characters in the registry.
   max_trigger_chars: 100,
 };
@@ -83,6 +87,11 @@ export function selectName(property) {
 /** 36-char dashed UUID → 32-char dashless (registry format). */
 export function dashless(id) {
   return id.replace(/-/g, '');
+}
+
+/** Set of excluded page IDs, normalized so dashed and dashless both match. */
+export function excludedPageIds(config) {
+  return new Set((config.excluded_pages ?? []).map((id) => dashless(String(id).trim().toLowerCase())));
 }
 
 /**

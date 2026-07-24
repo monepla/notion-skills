@@ -13,6 +13,8 @@ import { queryDataSource } from './notion.mjs';
 import {
   REGISTRY_PATH,
   STATE_DIR,
+  dashless,
+  excludedPageIds,
   loadConfig,
   plain,
   renderRegistry,
@@ -34,9 +36,16 @@ function truncate(text, maxChars) {
 function buildRows(pages, config) {
   const map = config.properties;
   const excluded = config.excluded_status.map((status) => status.toLowerCase());
+  const excludedIds = excludedPageIds(config);
+  const seenExcluded = new Set();
   const rows = [];
 
   for (const page of pages) {
+    if (excludedIds.has(dashless(page.id.toLowerCase()))) {
+      seenExcluded.add(dashless(page.id.toLowerCase()));
+      continue;
+    }
+
     const name = plain(page.properties?.[map.name]);
     if (!name) {
       log(`warn: skipping page with empty ${map.name}: ${page.id}`);
@@ -64,6 +73,12 @@ function buildRows(pages, config) {
     if (seen.has(row.name)) log(`warn: duplicate skill name "${row.name}" — consider archiving one`);
     else seen.set(row.name, row.id);
   }
+
+  // A stale entry here silently keeps nothing out, so surface it rather than ignore it.
+  for (const id of excludedIds) {
+    if (!seenExcluded.has(id)) log(`warn: excluded_pages entry not found in the database: ${id}`);
+  }
+  if (seenExcluded.size) log(`excluded ${seenExcluded.size} page(s) via excluded_pages`);
 
   rows.sort((a, b) => a.category.localeCompare(b.category, 'en') || a.name.localeCompare(b.name, 'en'));
   return rows;
