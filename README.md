@@ -140,19 +140,28 @@ keywords and queries Notion over the MCP connector instead:
 node scripts/build-web-skill.mjs
 ```
 
-This writes one or more `SKILL.md` files to `~/.claude/notion-skills/web-skill/`.
-Upload each as a skill in claude.ai (Settings → Capabilities). Requirements:
+This writes a **single** `SKILL.md` to `~/.claude/notion-skills/web-skill/`.
+Upload it once as a skill in claude.ai (Settings → Capabilities).
 
-- The Notion connector must be enabled in claude.ai, with your skills database shared to it.
-- Rebuild after adding, renaming, or archiving skills. Editing a skill's **page
-  content** needs no rebuild — pages are fetched live.
+The web variant carries **no skill list** — it queries your Notion database live
+every time it runs, so it always sees the full, current set. That means:
 
-claude.ai truncates a skill description at 1024 characters, and anything past
-the cut never matches. The build splits across multiple skill files as needed so
-that every skill name fits in some description (60 skills → 2 files).
+- No rebuild when you add, rename, or archive skills — the live query picks them
+  up. (Rebuild only if the database itself moves.)
+- No 1024-character description limit to fight, and no splitting into multiple files.
+- It needs no Notion access to *build* (only your `data_source_id` from config),
+  so it works in every environment, including MCP-only claude.ai.
 
-The output contains your database id and your skill names, so it is written to
-your state directory — never into this repository.
+Requirements:
+
+- The Notion connector must be enabled in claude.ai, with your skills database
+  shared to it — the skill queries the database at runtime.
+- Delete any router skill you uploaded under an earlier approach (e.g.
+  `notion-skill-router-1` / `-2`). Those froze a skill list and will match stale
+  page ids.
+
+The output contains your database id, so it is written to your state directory —
+never into this repository.
 
 ## Use the same skills from Notion AI
 
