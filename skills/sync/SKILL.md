@@ -9,52 +9,49 @@ description: >
 
 # notion-skills: sync
 
-Rebuilds `~/.claude/notion-skills/registry.md` from the Notion database
-configured in `~/.claude/notion-skills/config.json`.
+Rebuilds `~/.claude/notion-skills/registry.md` from the database configured in
+`~/.claude/notion-skills/config.json`.
 
-## Preferred path: the sync script
+`$PLUGIN` below is `${CLAUDE_PLUGIN_ROOT}` when that is set; otherwise it is the
+directory two levels up from this SKILL.md.
 
-If `NOTION_API_TOKEN` is set or the `ntn` CLI is available, just run:
+## With a token or the `ntn` CLI
 
 ```bash
-node "$(dirname of this plugin)/scripts/sync.mjs"
+node "$PLUGIN/scripts/sync.mjs"
 ```
 
-(The plugin root is where this SKILL.md lives — `../../scripts/sync.mjs` relative
-to it.) Report the script's summary line and any `warn:` lines to the user.
+The transport comes from `config.json` (`auto` prefers the token, then `ntn`).
+The summary and any `warn:` lines go to **stderr** — relay them.
 
-## Fallback path: MCP-only environments
+## MCP connector only
 
-When neither token nor `ntn` exists but the Notion MCP connector does, perform
-the sync yourself:
+A script cannot call an MCP server, so fetch the rows and hand them over. The
+script still does the filtering, sorting, truncating and escaping.
 
-1. Read `config.json` for `data_source_id`, `properties`, `excluded_status`.
-2. Query all pages: `notion-query-data-sources` with
-   `SELECT "Name", "Trigger", "Status", "Category", "Runtime" FROM "collection://<data_source_id>"`
-   (substitute mapped property names; omit columns the database doesn't have).
-   Fetch all pages, not just the first batch.
-3. Filter out pages whose status is in `excluded_status` (case-insensitive).
-   Keep pages with no status.
-4. Build the registry and WRITE it to `~/.claude/notion-skills/registry.md`
-   with this exact format — the SessionStart hook parses the header:
+1. Read `data_source_id` and `properties` from `~/.claude/notion-skills/config.json`.
+2. Query — **`id` is required**, and a registry line without it can never be
+   fetched again:
+   ```sql
+   SELECT id, "Name", "Trigger", "Status", "Category", "Runtime"
+   FROM "collection://<data_source_id>"
+   ```
+   Substitute the user's mapped column names; omit columns the database lacks.
+   Take **every** row — if the response says `has_more: true`, page through the
+   rest and concatenate them.
+3. Write the result to a temp file verbatim, then:
+   ```bash
+   node "$PLUGIN/scripts/sync.mjs" --from-json <file>
+   ```
 
-```
-<!-- notion-skills registry | synced: <ISO8601 UTC now> | count: <N> | source: <data_source_id> -->
-<!-- format: name | page_id (dashless) | runtime | category | trigger keywords -->
-<name> | <page_id without dashes> | <runtime, default any> | <category or -> | <trigger keywords, ≤100 chars>
-...
-```
-
-   - One line per skill, sorted by category then name.
-   - Escape literal `|` in fields as `\|`.
-   - Truncate trigger text at ~100 chars on a comma boundary, appending ` …`.
-
-5. Warn the user about: pages with empty names (skipped), duplicate skill
-   names, skills with no trigger keywords.
+Do not write `registry.md` by hand. The format has rules that are easy to get
+subtly wrong — sort order, `|` escaping, trigger truncation on a comma boundary,
+dashless page IDs — and a registry that is merely *short* looks exactly like a
+correct one while the missing skills quietly stop routing.
 
 ## Report
 
-- Skill count and what changed (added / removed / renamed vs the previous cache
-  if it existed)
-- Note that already-open sessions keep the old registry; new sessions get the
-  fresh one automatically.
+- The script's summary line (`Updated registry: N skills` or `No changes (N skills)`)
+  and every `warn:` line.
+- What changed versus the previous cache, if the user cares.
+- Already-open sessions keep the old registry; new sessions get the fresh one.

@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import { REGISTRY_PATH, loadConfig, parseSyncedAt } from '../scripts/lib.mjs';
-import { detectTransport } from '../scripts/notion.mjs';
+import { resolveTransport } from '../scripts/notion.mjs';
 
 const SYNC_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'sync.mjs');
 const MAX_INJECT_BYTES = 64 * 1024; // safety cap — never flood the context
@@ -48,20 +48,22 @@ function main() {
   const ageHours = syncedAt ? (Date.now() - syncedAt.getTime()) / 3_600_000 : Infinity;
   let staleNote = '';
 
-  if (ageHours > config.ttl_hours && config.transport !== 'mcp') {
-    if (detectTransport()) {
+  if (ageHours > config.ttl_hours) {
+    // resolveTransport short-circuits on NOTION_API_TOKEN and returns null for
+    // 'mcp' without probing anything, so the only case that costs a subprocess
+    // is a token-less 'auto' on an already-stale cache.
+    const { transport } = resolveTransport(config.transport);
+    staleNote = '(cache may be stale; run /notion-skills:sync to refresh)';
+
+    if (transport) {
       // Refresh for the NEXT session; this one uses the current cache.
       try {
         spawn(process.execPath, [SYNC_SCRIPT, '--quiet'], { detached: true, stdio: 'ignore' }).unref();
         staleNote = `(cache is ${Math.round(ageHours)}h old; a background refresh has started)`;
       } catch {
-        staleNote = '(cache may be stale; run /notion-skills:sync to refresh)';
+        /* keep the manual-refresh note */
       }
-    } else {
-      staleNote = '(cache may be stale; run /notion-skills:sync to refresh)';
     }
-  } else if (ageHours > config.ttl_hours) {
-    staleNote = '(cache may be stale; run /notion-skills:sync to refresh)';
   }
 
   if (registry.length > MAX_INJECT_BYTES) {

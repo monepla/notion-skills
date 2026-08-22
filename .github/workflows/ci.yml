@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 18 is the floor the README promises; 22 is what most users run.
+        node: ['18', '20', '22']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Run tests
+        # No dependencies and no network: every test either works on fixtures or
+        # runs the shipped scripts through their --from-json path.
+        run: node --test 'tests/*.test.mjs'
+
+  manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Manifests are valid JSON
+        run: |
+          set -euo pipefail
+          for file in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json; do
+            python3 -m json.tool < "$file" > /dev/null
+            echo "ok: $file"
+          done
+
+      - name: plugin.json and the marketplace entry agree
+        # `claude plugin tag` enforces this at release time; catching a drifted
+        # description here means the tag never fails for a reason a diff shows.
+        run: |
+          python3 - <<'PY'
+          import json, sys
+
+          plugin = json.load(open('.claude-plugin/plugin.json'))
+          market = json.load(open('.claude-plugin/marketplace.json'))
+          entries = [p for p in market['plugins'] if p['name'] == plugin['name']]
+
+          if not entries:
+              sys.exit(f"marketplace.json has no entry named {plugin['name']!r}")
+          entry = entries[0]
+
+          problems = []
+          if entry['description'] != plugin['description']:
+              problems.append('description differs between plugin.json and marketplace.json')
+          if market['owner']['name'] != plugin['author']['name']:
+              problems.append('owner/author name differs')
+          if problems:
+              sys.exit('\n'.join(problems))
+          print(f"ok: {plugin['name']} v{plugin['version']}")
+          PY
+
+      - name: Every hook command points at a file that ships
+        run: |
+          python3 - <<'PY'
+          import json, os, re, sys
+
+          hooks = json.load(open('hooks/hooks.json'))
+          missing = []
+          for event, groups in hooks['hooks'].items():
+              for group in groups:
+                  for hook in group['hooks']:
+                      for path in re.findall(r'\$\{CLAUDE_PLUGIN_ROOT\}/(\S+?)"', hook['command']):
+                          if not os.path.isfile(path):
+                              missing.append(f'{event}: {path}')
+          if missing:
+              sys.exit('hook targets not found:\n  ' + '\n  '.join(missing))
+          print('ok: all hook targets exist')
+          PY

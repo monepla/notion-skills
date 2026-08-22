@@ -57,8 +57,18 @@ Then, in a **new** session (the hook loads at session start):
 /notion-skills:setup https://www.notion.so/<your-skills-database>
 ```
 
-No database yet? Run `/notion-skills:setup` with no arguments — if your Notion
-MCP connector is available, it offers to create one with the right schema.
+That resolves the data source, checks your schema, writes the config and runs the
+first sync in one command. No database yet? Run `/notion-skills:setup` with no
+arguments — if your Notion MCP connector is available, it offers to create one
+with the right schema.
+
+The scripts also run on their own, if you would rather not go through a session:
+
+```bash
+node scripts/setup.mjs "<database URL>"                   # same thing, from a shell
+node scripts/setup.mjs --dry-run --json "<database URL>"  # report, write nothing
+node scripts/sync.mjs                                     # refresh the registry
+```
 
 ## Database schema
 
@@ -84,11 +94,26 @@ Different property names (e.g. a Japanese schema)? Map them in
 
 ## Auth — three ways, pick what you already have
 
-| You have | Sync runs | Notes |
-|---|---|---|
-| `NOTION_API_TOKEN` env var | Automatically, in the background | Create an [internal integration](https://www.notion.so/profile/integrations) and share your DB with it |
-| [Notion CLI](https://developers.notion.com/cli/get-started/overview) (`curl -fsSL https://ntn.dev \| bash`, then `ntn login`) | Automatically, in the background | Token stays in your OS keychain |
-| Notion MCP connector only | When you run `/notion-skills:sync` | Claude performs the sync in-session |
+| You have | `transport` | Sync runs | Notes |
+|---|---|---|---|
+| `NOTION_API_TOKEN` env var | `token` | Automatically, in the background | Create an [internal integration](https://www.notion.so/profile/integrations) and share your DB with it |
+| [Notion CLI](https://developers.notion.com/cli/get-started/overview) (`curl -fsSL https://ntn.dev \| bash`, then `ntn login`) | `ntn` | Automatically, in the background | Token stays in your OS keychain |
+| Notion MCP connector only | `mcp` | When you run `/notion-skills:sync` | Claude runs one query and hands the rows to the sync script |
+
+`transport` defaults to `auto`, which prefers the token and falls back to `ntn`.
+Naming one explicitly pins it: with `"transport": "ntn"` the keychain path is used
+even if a token happens to be exported, and if the CLI is missing you get an error
+saying so rather than a silent switch to something else.
+
+All three end up in the same code: the MCP path differs only in *who* fetches the
+rows. Claude runs
+
+```sql
+SELECT id, "Name", "Trigger", "Status", "Category", "Runtime" FROM "collection://<id>"
+```
+
+and passes the result to `sync.mjs --from-json`, which does the filtering,
+sorting, truncation and escaping. Nothing hand-writes the registry format.
 
 The token is never written to any file by this plugin.
 
@@ -100,6 +125,7 @@ The token is never written to any file by this plugin.
 | `/notion-skills:sync` | Refresh the registry now |
 | `notion-skill-router` | Routes matching requests to your Notion skills (automatic) |
 | `notion-skill-creator` | "Turn this into a skill" — creates the page and registers it |
+| `web-skill` | Builds the standalone claude.ai router described below |
 
 ## Configuration (`~/.claude/notion-skills/config.json`)
 
@@ -190,8 +216,13 @@ Guidelines that make skills portable:
 | "Not configured yet" | Run `/notion-skills:setup <DB URL>` |
 | A new Notion skill isn't routed | `Status` not in `excluded_status`? Then `/notion-skills:sync` (or wait for the TTL refresh) |
 | Fetching a skill 404s | The registry is stale — `/notion-skills:sync` |
-| Sync says "Registry came out empty" | `data_source_id` or `properties` in `config.json` don't match the database |
+| `no "Name" column (its columns: …)` | Your title column has a different name. Re-run setup with `--property name=<that column>` |
+| `Every one of the N row(s) was filtered out` | Your `Status` values collide with `excluded_status` (default `archived`, `draft`, `disabled`) |
+| `N row(s) carry no page id` | An MCP query without `id` in the `SELECT`. Re-query including it |
+| `only the first page ("has_more": true)` | Page through the rest of the query and concatenate before syncing |
+| `config.transport is "ntn" but …` / `is "token" but …` | You pinned a transport that isn't available. Install it, or set `"transport": "auto"` |
 | Wrong property names | Map them in `config.json` → `properties`; don't rename anything in Notion |
+| Fewer skills than you expected | Compare `count:` in the registry header against your database. `warn:` lines from the last sync name every page that was skipped and why |
 
 Escape hatches:
 
@@ -201,12 +232,39 @@ Escape hatches:
 - `claude plugin uninstall notion-skills@notion-skills` — remove the plugin.
   Your `~/.claude/notion-skills/` state and your Notion database are untouched
 
+## What it accesses
+
+| | |
+|---|---|
+| Network | `api.notion.com` only, to read your skills database. No telemetry, no analytics, no update check |
+| Notion writes | None. The scripts only `POST …/query` and `GET …/databases/{id}` |
+| Credentials | `NOTION_API_TOKEN` from your environment, or the `ntn` CLI's keychain token. Never written to disk, never sent anywhere but Notion |
+| Hooks | One `SessionStart`, which reads the two files in `~/.claude/notion-skills/` and prints the registry. No `UserPromptSubmit` / `PreToolUse` / `PostToolUse` hook — your prompts and tool calls are not observed |
+| Files | `~/.claude/notion-skills/` only (override with `NOTION_SKILLS_HOME`) |
+
+Opt out with `NOTION_SKILLS_DISABLE=1` (one session), `"injection": "off"` (no
+injection at all), or `"transport": "mcp"` (no background sync). Full detail in
+[SECURITY.md](SECURITY.md).
+
 ## Security
 
 **Skill page content is executed as instructions.** Point the router only at a
 private database you control. A shared or public database would let anyone who
-can edit those pages inject instructions into your sessions. The sync scripts
-are read-only against the Notion API.
+can edit those pages inject instructions into your sessions — granting edit
+access to that database is equivalent to granting the ability to run commands as
+you. The sync scripts are read-only against the Notion API.
+
+Report a vulnerability privately: [SECURITY.md](SECURITY.md).
+
+## Development
+
+```bash
+node --test 'tests/*.test.mjs'   # no dependencies, no network
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for local testing without installing
+(`claude --plugin-dir …`) and the release process, and
+[CHANGELOG.md](CHANGELOG.md) for what changed when.
 
 ## 日本語での概要
 
@@ -221,14 +279,19 @@ Claude Code（本プラグイン）・claude.ai（Notion コネクタ）・**Not
 from Notion AI" の推奨エージェント指示を参照）。
 
 - 前提: Node.js 18+ が PATH にあること（フックと同期スクリプトが使う）
-- 導入: 上記 Install の2コマンド → **新しいセッションで** `/notion-skills:setup <DBのURL>`
+- 導入: 上記 Install の2コマンド → **新しいセッションで** `/notion-skills:setup <DBのURL>`。
+  データソース解決・スキーマ検査・config 書き込み・初回同期を1コマンドで行う
 - ページ**本文**の編集は即時反映（毎回ライブ取得）。名前・トリガー・Status の変更は
   自動同期（既定24h）か `/notion-skills:sync` で反映
-- 認証は `NOTION_API_TOKEN` / `ntn` CLI / Notion MCP コネクタの3系統。トークンを
-  ファイルに書くことはない
-- 日本語プロパティ名の DB は `config.json` の `properties` でマッピング可能
+- 認証は `NOTION_API_TOKEN` / `ntn` CLI / Notion MCP コネクタの3系統で、`config.json` の
+  `transport` で明示指定できる（`auto` は token → ntn の順）。MCP のみの環境では
+  Claude が1回クエリして結果を `sync.mjs --from-json` に渡す（レジストリを手書きしない）。
+  トークンをファイルに書くことはない
+- 日本語プロパティ名の DB は `config.json` の `properties`、または
+  `setup.mjs --property name=スキル名` でマッピング可能（Notion 側の改名は不要）
+- 通信先は `api.notion.com` のみ。テレメトリ・解析送信は無い（[SECURITY.md](SECURITY.md)）
 - **注意**: スキル本文は指示として実行される。ルーティング先は必ず自分だけが
-  編集できる private DB にすること
+  編集できる private DB にすること（そのDBの編集権限＝セッションへの指示注入権限）
 
 ## License
 
