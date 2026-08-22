@@ -8,6 +8,22 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 Releases are tagged `notion-skills--v<version>` (the naming `claude plugin tag`
 expects). See [CONTRIBUTING.md](CONTRIBUTING.md#releasing) for the release steps.
 
+## [0.3.1] — 2026-08-22
+
+Positioning only — no behaviour change, no code touched.
+
+### Changed
+
+- The plugin description now leads with what this does that Notion's own skill
+  install does not: no per-skill install step, and no local copy of the skill.
+  It still names the SessionStart hook and states that the plugin reads Notion
+  with the user's own credentials and sends no telemetry.
+- README opens with a section comparing this to Notion's built-in install, which
+  saves a skill page to your computer for Claude Code, Codex, Cursor, Gemini and
+  Grok. That is first-party, covers more agents and carries attached files, so
+  the section says plainly to use it if it covers you, and describes the trade
+  this plugin makes instead.
+
 ## [0.3.0] — 2026-08-22
 
 First tagged release. Setup went from a sequence of model-driven steps to a
@@ -123,6 +139,7 @@ where they were written, but 0.3.0 is the first version a user can actually pin.
   for Claude Code — the SessionStart hook, the registry cache, the sync script
   with token and `ntn` transports, and the router and creator skills.
 
+[0.3.1]: https://github.com/monepla/notion-skills/releases/tag/notion-skills--v0.3.1
 [0.3.0]: https://github.com/monepla/notion-skills/releases/tag/notion-skills--v0.3.0
 [0.2.0]: https://github.com/monepla/notion-skills/compare/a4bca90...e692132
 [0.1.0]: https://github.com/monepla/notion-skills/commit/a4bca90

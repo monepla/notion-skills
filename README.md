@@ -1,7 +1,7 @@
 # notion-skills
 
 Turn a Notion database into your personal, auto-syncing **skill store** for
-Claude Code.
+Claude Code — no per-skill install step, and no copy of your skills on disk.
 
 Each row in your database is a skill: the page content is the instruction set,
 and a `Trigger` property holds the keywords that should activate it. This
@@ -28,6 +28,34 @@ once, run it from wherever you happen to be working.
               └──────── live ───────────┤ Claude session → notion-skill-router    │
                                         └─────────────────────────────────────────┘
 ```
+
+## Is this what you want? (vs. Notion's built-in skill install)
+
+Notion can install a skill page straight to local agents — Claude Code, Codex,
+Cursor, Gemini and Grok — via the **Install** control on the page. It saves the
+skill to your computer, including `SKILL.md` and approved attached files, and you
+invoke it as a slash command. That is first-party, covers more agents than this
+plugin, and carries attachments. **If it covers you, use it.**
+
+This plugin makes a different trade:
+
+| | Notion's built-in install | notion-skills |
+|---|---|---|
+| Adding a skill | Install each page you want | Add the page — the whole database is the store |
+| On disk | The skill is saved to your computer | No skill copy is written; only an index cache |
+| Getting the content | From the installed copy | Fetched from the page at use time |
+| Invoking | `/skill-name` | Trigger keywords, matched from the injected index |
+| Attached files | Included | Page body only |
+| Agents | Claude Code, Codex, Cursor, Gemini, Grok | Claude Code (plus Notion AI and claude.ai, below) |
+
+So it suits you if you have **many** skills and do not want to install them one
+at a time, or if you edit skills often and would rather not manage local copies
+at all. It suits you less if you need attached files, or an agent other than
+Claude Code.
+
+The cost is context: the index is injected every session (see
+[Configuration](#configuration-claudenotion-skillsconfigjson) for the measured
+size, and `"injection": "off"` to turn it off).
 
 ## Requirements
 
@@ -269,6 +297,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for local testing without installing
 ## 日本語での概要
 
 Notion データベースを Claude Code の「スキルストア」にするプラグイン。
+**スキルごとの install 操作が要らず、スキルの実体をローカルに置かない**のが特徴。
+
+> **Notion 標準の install との違い**: Notion はスキルページを Claude Code / Codex /
+> Cursor / Gemini / Grok に install でき、SKILL.md と承認済み添付ファイルが PC に保存される。
+> 公式で対応エージェントも多く添付にも対応しているので、**それで足りるならそちらを使うのがよい**。
+> 本プラグインは代わりに「DB 丸ごとがストア（install 操作なし）」「実体を置かず本文は実行時取得」
+> という別のトレードオフを取る。詳細は上の "Is this what you want?" を参照。
+
 DB の各ページ＝1スキル（本文が指示書、`Trigger` プロパティが発火キーワード）。
 
 スキルは「ただの Notion ページ」なので、ストアはエージェント非依存:
