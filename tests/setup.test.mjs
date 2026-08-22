@@ -6,7 +6,9 @@ import { join } from 'node:path';
 
 process.env.NOTION_SKILLS_HOME = mkdtempSync(join(tmpdir(), 'notion-skills-setup-'));
 
-const { parseArgs, resolveDataSourceId, columnsOf, checkSchema, summarize } = await import('../scripts/setup.mjs');
+const { parseArgs, resolveDataSourceId, columnsOf, checkSchema, summarize, isNotFound } = await import(
+  '../scripts/setup.mjs'
+);
 const { DEFAULT_CONFIG } = await import('../scripts/lib.mjs');
 
 describe('parseArgs', () => {
@@ -90,43 +92,91 @@ describe('parseArgs', () => {
 describe('resolveDataSourceId', () => {
   const dbId = '0123456789abcdef0123456789abcdef';
   const dsId = '00000000-1111-2222-3333-444444444444';
+  const notFound = () => {
+    throw new Error('Notion API 404: {"object":"error","code":"object_not_found"}');
+  };
 
-  test('resolves a database id to its first data source', async () => {
+  test('resolves a database id to its data source', async () => {
     const result = await resolveDataSourceId(`https://notion.so/Agent-Skills-${dbId}`, {
       deps: {
         getDatabase: async () => ({ data_sources: [{ id: dsId }], title: [{ plain_text: 'Agent Skills' }] }),
-        queryDataSource: async () => assert.fail('should not probe when the database resolved'),
+        probeDataSource: async () => assert.fail('should not probe when the database resolved'),
       },
     });
     assert.equal(result.dataSourceId, dsId);
     assert.equal(result.via, 'database');
     assert.equal(result.title, 'Agent Skills');
-    assert.equal(result.multiple, false);
   });
 
-  test('flags a multi-source database so the caller can say which one it picked', async () => {
-    const result = await resolveDataSourceId(dbId, {
-      deps: { getDatabase: async () => ({ data_sources: [{ id: dsId }, { id: 'other' }] }) },
-    });
-    assert.equal(result.multiple, true);
+  test('refuses to guess when a database has several data sources', async () => {
+    // Silently taking the first one syncs whichever table Notion happens to list
+    // first, and every later error then describes a database the user never chose.
+    await assert.rejects(
+      () =>
+        resolveDataSourceId(dbId, {
+          deps: {
+            getDatabase: async () => ({
+              data_sources: [{ id: dsId, name: 'Tasks' }, { id: 'other-id', name: 'Skills' }],
+            }),
+            probeDataSource: async () => assert.fail('must not probe'),
+          },
+        }),
+      (error) => {
+        assert.match(error.message, /2 data sources/);
+        assert.match(error.message, /--data-source-id/);
+        // Both ids and both names, so the choice can actually be made.
+        assert.match(error.message, new RegExp(dsId));
+        assert.match(error.message, /other-id/);
+        assert.match(error.message, /Skills/);
+        return true;
+      },
+    );
   });
 
-  test('falls back to treating the id as a data source when the database lookup 404s', async () => {
+  test('falls back to treating the id as a data source when the database is not found', async () => {
     let probed = '';
+    let probeCalls = 0;
     const result = await resolveDataSourceId(dsId, {
       deps: {
-        getDatabase: async () => {
-          throw new Error('Notion API 404: not a database');
-        },
-        queryDataSource: async (id) => {
+        getDatabase: notFound,
+        probeDataSource: async (id) => {
           probed = id;
-          return [];
+          probeCalls += 1;
+          return { results: [], has_more: false };
         },
       },
     });
     assert.equal(result.via, 'data-source');
     assert.equal(result.dataSourceId, dsId);
     assert.equal(probed, dsId, 'the probe must use the dashed form the API expects');
+    assert.equal(probeCalls, 1, 'the probe must be a single request, not a paginated walk');
+  });
+
+  test('preserves a non-404 failure instead of retrying it as a data source', async () => {
+    // Retrying turns "your token cannot see this" into "this is not a valid data
+    // source", which sends the user after the wrong problem.
+    for (const real of [
+      'Notion API 401: {"code":"unauthorized"}',
+      'Notion API 403: {"code":"restricted_resource"}',
+      'Notion API 429: {"code":"rate_limited"}',
+      'Notion API 502: bad gateway',
+    ]) {
+      await assert.rejects(
+        () =>
+          resolveDataSourceId(dbId, {
+            deps: {
+              getDatabase: async () => {
+                throw new Error(real);
+              },
+              probeDataSource: async () => assert.fail(`must not probe after: ${real}`),
+            },
+          }),
+        (error) => {
+          assert.equal(error.message, real);
+          return true;
+        },
+      );
+    }
   });
 
   test('propagates the probe failure when the id is neither', async () => {
@@ -134,10 +184,8 @@ describe('resolveDataSourceId', () => {
       () =>
         resolveDataSourceId(dbId, {
           deps: {
-            getDatabase: async () => {
-              throw new Error('404');
-            },
-            queryDataSource: async () => {
+            getDatabase: notFound,
+            probeDataSource: async () => {
               throw new Error('Notion API 404: object_not_found');
             },
           },
@@ -152,11 +200,29 @@ describe('resolveDataSourceId', () => {
         resolveDataSourceId('https://example.com/nothing', {
           deps: {
             getDatabase: async () => assert.fail('must not call out for un-parseable input'),
-            queryDataSource: async () => assert.fail('must not call out for un-parseable input'),
+            probeDataSource: async () => assert.fail('must not call out for un-parseable input'),
           },
         }),
       /Could not find a Notion id/,
     );
+  });
+});
+
+describe('isNotFound', () => {
+  test('recognises the shapes that mean "no such database"', () => {
+    for (const message of ['Notion API 404: x', 'object_not_found', 'validation_error']) {
+      assert.equal(isNotFound(new Error(message)), true, message);
+    }
+  });
+
+  test('does not treat auth, rate limiting or outages as not-found', () => {
+    for (const message of ['Notion API 401: x', 'Notion API 403: x', 'Notion API 429: x', 'Notion API 500: x']) {
+      assert.equal(isNotFound(new Error(message)), false, message);
+    }
+  });
+
+  test('tolerates junk', () => {
+    for (const value of [null, undefined, {}, 'text']) assert.equal(isNotFound(value), false);
   });
 });
 

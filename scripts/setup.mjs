@@ -17,7 +17,14 @@
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-import { getDatabase, queryDataSource, resolveTransport, TRANSPORTS } from './notion.mjs';
+import {
+  getDatabase,
+  probeDataSource,
+  queryDataSource,
+  resolveTransport,
+  SCRIPT_TRANSPORTS,
+  TRANSPORTS,
+} from './notion.mjs';
 import {
   CONFIG_PATH,
   DEFAULT_CONFIG,
@@ -163,26 +170,53 @@ export async function resolveDataSourceId(rawId, { transport, deps = {} } = {}) 
   if (!id) throw new Error(`Could not find a Notion id in "${rawId}".`);
 
   const fetchDatabase = deps.getDatabase ?? getDatabase;
-  const probe = deps.queryDataSource ?? queryDataSource;
+  const probe = deps.probeDataSource ?? probeDataSource;
 
+  let database = null;
   try {
-    const database = await fetchDatabase(dashed(id), { transport });
-    const first = database?.data_sources?.[0]?.id;
-    if (first) {
-      return {
-        dataSourceId: first,
-        via: 'database',
-        title: database?.title?.map((part) => part.plain_text ?? '').join('') || '',
-        multiple: (database?.data_sources ?? []).length > 1,
-      };
-    }
-  } catch {
-    // Not a database id (typically a 404) — fall through and try it as a data source.
+    database = await fetchDatabase(dashed(id), { transport });
+  } catch (error) {
+    // Only "no such database" means "maybe it is a data source id". An auth,
+    // permission, rate-limit or outage error is the real answer, and retrying it
+    // as a data source replaces it with a second, misleading failure.
+    if (!isNotFound(error)) throw error;
+  }
+
+  const sources = database?.data_sources ?? [];
+
+  // Picking sources[0] when there are several is a silent coin flip: if the
+  // skills table is not first, setup syncs the wrong one and every later error
+  // describes a database the user never pointed at. Make them choose.
+  if (sources.length > 1) {
+    const choices = sources.map((source) => `  ${source.id}${source.name ? `  (${source.name})` : ''}`).join('\n');
+    throw new Error(
+      `That database has ${sources.length} data sources, so which one holds the skills is ambiguous. ` +
+        `Re-run with --data-source-id <id>:\n${choices}`,
+    );
+  }
+
+  if (sources[0]?.id) {
+    return {
+      dataSourceId: sources[0].id,
+      via: 'database',
+      title: database?.title?.map((part) => part.plain_text ?? '').join('') || '',
+    };
   }
 
   // If a single-row query succeeds, the id we were handed already is a data source.
-  await probe(dashed(id), { transport, pageSize: 1 });
-  return { dataSourceId: dashed(id), via: 'data-source', title: '', multiple: false };
+  await probe(dashed(id), { transport });
+  return { dataSourceId: dashed(id), via: 'data-source', title: '' };
+}
+
+/**
+ * Whether a Notion error means "that id does not name a database here".
+ *
+ * Deliberately narrow: anything not listed surfaces to the user rather than
+ * being re-tried as a data source. A wrong guess costs them the real cause.
+ */
+export function isNotFound(error) {
+  const message = String(error?.message ?? '');
+  return /\b404\b/.test(message) || /object_not_found/.test(message) || /validation_error/.test(message);
 }
 
 /** Column names present on a row, for both REST pages and MCP rows. */
@@ -243,8 +277,12 @@ async function main() {
   const requested = options.transport || 'auto';
   const { transport: scriptTransport, reason } = resolveTransport(requested);
 
-  // MCP has no script transport by design; it must supply rows instead.
-  if (!scriptTransport && !options.fromJson) throw new Error(reason);
+  // MCP has no script transport by design; it must supply rows instead. But an
+  // explicitly named token/ntn still has to be available even when rows are
+  // supplied — it is what config.json records and what every later sync uses,
+  // so accepting it here writes a configuration that cannot work tomorrow.
+  const pinnedScriptTransport = SCRIPT_TRANSPORTS.includes(requested);
+  if (!scriptTransport && (pinnedScriptTransport || !options.fromJson)) throw new Error(reason);
 
   // Resolving a database id → data_source_id needs a live API call, which the
   // MCP path cannot make from here. The model already knows the id in that case
@@ -256,9 +294,25 @@ async function main() {
     );
   }
 
-  const dataSourceId = options.dataSourceId
-    ? dashed(parseNotionId(options.dataSourceId) || options.dataSourceId)
-    : (await resolveDataSourceId(options.target, { transport: requested })).dataSourceId;
+  let dataSourceId;
+  if (options.dataSourceId) {
+    // Nothing downstream validates this on the --from-json path: the first
+    // registry builds fine from the supplied rows, and only the next sync
+    // discovers the id was never real. Reject it here, as the other id
+    // arguments already do.
+    const parsed = parseNotionId(options.dataSourceId);
+    if (!parsed) {
+      throw new Error(
+        `--data-source-id "${options.dataSourceId}" is not a Notion id. Expected 32 hex characters, ` +
+          'a dashed UUID, or a collection:// URL.',
+      );
+    }
+    dataSourceId = dashed(parsed);
+  } else {
+    const resolved = await resolveDataSourceId(options.target, { transport: requested });
+    dataSourceId = resolved.dataSourceId;
+    if (resolved.title) log(`note: using data source of "${resolved.title}"`);
+  }
 
   const existing = loadConfig() ?? {};
   const config = {

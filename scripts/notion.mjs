@@ -170,3 +170,17 @@ function viaNtn(method, path, body) {
   }
   return JSON.parse(stdout);
 }
+
+/**
+ * One query against a data source, without following pagination.
+ *
+ * `queryDataSource` walks every cursor, so using it to ask "is this id a data
+ * source?" with pageSize 1 costs one request per row — 66 requests on a 66-row
+ * store, and a rate limit on a large one. A probe wants exactly one response.
+ */
+export async function probeDataSource(dataSourceId, { transport, pageSize = 1 } = {}) {
+  return request('POST', `v1/data_sources/${dataSourceId}/query`, {
+    body: { page_size: pageSize },
+    transport: requireTransport(transport),
+  });
+}

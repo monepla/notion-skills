@@ -51,6 +51,27 @@ hand-written one.
 - A partial result (`has_more: true`) handed to `--from-json` is refused for the
   same reason.
 
+Found by automated review on this change, before release:
+
+- The data-source probe walked the entire store. `resolveDataSourceId` asked "is
+  this id a data source?" via the fetch-everything helper with `page_size: 1`,
+  which follows every cursor — 66 requests against a 66-row database, on the code
+  path whose purpose is making setup fast. `probeDataSource` makes exactly one.
+- A database with several data sources silently got the first one. If the skills
+  table was not first, setup synced the wrong table and every later error
+  described a database the user never chose. It now lists the sources and asks.
+- A non-404 database lookup failure was treated as "maybe it is a data source
+  id" and retried, so an auth, permission, rate-limit or outage error was
+  replaced by a second, misleading one. Only not-found falls through now.
+- `--data-source-id` accepted anything on the `--from-json` path, since the first
+  registry builds from the supplied rows and nothing validates the id until the
+  next sync. It is now parsed like every other id argument.
+- A pinned `--transport token`/`ntn` was not checked when `--from-json` was
+  present: setup succeeded with no token, reported `mcp`, and wrote `"token"` to
+  config — a configuration that could not work on the next sync. The pin is now
+  validated whether or not rows are supplied, and the reported transport is
+  asserted to match the one written.
+
 ### Changed
 
 - The `setup` skill reports counts, categories and runtimes instead of re-listing

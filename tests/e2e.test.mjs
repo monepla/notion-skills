@@ -171,6 +171,65 @@ describe('setup.mjs: one command does resolve → validate → config → first 
     assert.equal(existsSync(join(home, 'registry.md')), false);
   });
 
+  test('rejects a --data-source-id that is not a Notion id', () => {
+    // On the --from-json path nothing else validates it: the first registry
+    // builds fine from the supplied rows, and only the next sync finds out.
+    const home = freshHome();
+    const result = run(
+      SETUP,
+      ['--data-source-id', 'not-an-id', '--from-json', rowsFile(home, [row('a', 'one')])],
+      home,
+      { expectFailure: true },
+    );
+    assert.match(result.stderr, /not a Notion id/);
+    assert.equal(existsSync(join(home, 'config.json')), false, 'must not persist an unusable id');
+  });
+
+  test('accepts a data source id given as a dashed uuid, bare hex, or URL', () => {
+    for (const given of [DS, DS.replace(/-/g, ''), `https://www.notion.so/ws/Skills-${DS.replace(/-/g, '')}?v=abc`]) {
+      const home = freshHome();
+      run(SETUP, ['--data-source-id', given, '--from-json', rowsFile(home, [row('a', 'one')])], home);
+      assert.equal(JSON.parse(readFileSync(join(home, 'config.json'), 'utf8')).data_source_id, DS, given);
+    }
+  });
+
+  test('a pinned token/ntn transport must be available even when rows are supplied', () => {
+    // The pin is what config.json records and what every later sync uses, so
+    // accepting it here writes a configuration that cannot work tomorrow.
+    for (const [transport, expected] of [
+      ['token', /NOTION_API_TOKEN is not set/],
+      ['ntn', /not on PATH/],
+    ]) {
+      const home = freshHome();
+      const result = run(
+        SETUP,
+        ['--data-source-id', DS, '--transport', transport, '--from-json', rowsFile(home, [row('a', 'one')])],
+        home,
+        { expectFailure: true },
+      );
+      assert.match(result.stderr, expected, transport);
+      assert.equal(existsSync(join(home, 'config.json')), false, `${transport}: must not persist`);
+    }
+  });
+
+  test('an explicit mcp transport is still fine with rows supplied', () => {
+    const home = freshHome();
+    run(SETUP, ['--data-source-id', DS, '--transport', 'mcp', '--from-json', rowsFile(home, [row('a', 'one')])], home);
+    assert.equal(JSON.parse(readFileSync(join(home, 'config.json'), 'utf8')).transport, 'mcp');
+  });
+
+  test('the reported transport matches the one written to config', () => {
+    // These disagreed: the summary said mcp while config.json recorded token.
+    const home = freshHome();
+    const { stdout } = run(
+      SETUP,
+      ['--data-source-id', DS, '--from-json', rowsFile(home, [row('a', 'one')]), '--json'],
+      home,
+    );
+    const summary = JSON.parse(stdout);
+    assert.equal(summary.effective_transport, JSON.parse(readFileSync(join(home, 'config.json'), 'utf8')).transport);
+  });
+
   test('prints usage with no arguments and exits 0', () => {
     const home = freshHome();
     const { stdout } = run(SETUP, [], home);
