@@ -26,7 +26,13 @@ jobs:
       - name: Run tests
         # No dependencies and no network: every test either works on fixtures or
         # runs the shipped scripts through their --from-json path.
-        run: node --test 'tests/*.test.mjs'
+        #
+        # The glob is deliberately unquoted so the SHELL expands it. `node --test`
+        # only understands glob patterns itself from Node 21, so a quoted pattern
+        # fails on 18 and 20 with "Could not find 'tests/*.test.mjs'". If nothing
+        # matches, the literal pattern reaches node and it exits non-zero — which
+        # is the outcome we want over a silent zero-test pass.
+        run: node --test tests/*.test.mjs
 
   manifests:
     runs-on: ubuntu-latest

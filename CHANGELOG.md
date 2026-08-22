@@ -28,7 +28,7 @@ hand-written one.
   names (a Japanese schema, say) is configured in the same single command.
 - `--transport`, `--injection`, `--ttl-hours`, `--exclude-page`, `--dry-run` and
   `--json` on `setup.mjs`.
-- A test suite (`node --test 'tests/*.test.mjs'`) and CI across Node 18/20/22.
+- A test suite (`node --test tests/*.test.mjs`) and CI across Node 18/20/22.
   There was none before; it needs no dependencies and makes no network calls.
 
 ### Fixed

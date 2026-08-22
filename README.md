@@ -159,8 +159,8 @@ smaller). A typical 20-skill store lands well under 1k. Set
 ## Web variant (claude.ai)
 
 The SessionStart hook only runs in Claude Code, so on claude.ai there is no
-injected registry. Build a standalone skill that carries its own trigger
-keywords and queries Notion over the MCP connector instead:
+injected registry. Build a standalone skill that queries Notion over the MCP
+connector at request time instead:
 
 ```bash
 node scripts/build-web-skill.mjs
@@ -259,7 +259,7 @@ Report a vulnerability privately: [SECURITY.md](SECURITY.md).
 ## Development
 
 ```bash
-node --test 'tests/*.test.mjs'   # no dependencies, no network
+node --test tests/*.test.mjs   # no dependencies, no network
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for local testing without installing

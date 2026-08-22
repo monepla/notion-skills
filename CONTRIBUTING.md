@@ -13,14 +13,16 @@ send.
 ## Running the tests
 
 ```bash
-node --test 'tests/*.test.mjs'
+node --test tests/*.test.mjs
 ```
 
 The suite makes **no network calls**. Everything either runs against fixtures or
 drives the shipped scripts through their `--from-json` path, which is also the
-real code path for MCP-only users. Quote the glob — an unquoted one is expanded
-by the shell before Node sees it, and `node --test tests/` reads `tests` as a
-name filter rather than a directory.
+real code path for MCP-only users.
+
+Leave the glob unquoted so your shell expands it. `node --test` only interprets
+glob patterns itself from Node 21 onward, so a quoted `'tests/*.test.mjs'` fails
+on Node 18 and 20 with `Could not find 'tests/*.test.mjs'`.
 
 CI runs the same command on Node 18, 20 and 22, plus manifest checks
 (`.github/workflows/ci.yml`).
