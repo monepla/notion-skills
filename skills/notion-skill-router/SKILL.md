@@ -69,12 +69,14 @@ query Notion directly instead. This path needs no local files.
    - `~/.claude/notion-skills/config.json` if the filesystem is reachable,
    - otherwise `notion-search` for the user's skills database (typically named
      "Agent Skills"), and confirm the match with the user before using it.
-2. **Query it** with `notion-query-data-sources`:
+2. **Query it** with `notion-query-data-sources`. `id` is required — Step 2 fetches
+   the page by it, and the query returns no id unless you ask for one:
    ```
-   SELECT "Name", "Trigger", "Status", "Category", "Runtime"
+   SELECT id, "Name", "Trigger", "Status", "Category", "Runtime"
    FROM "collection://<data_source_id>"
    ```
-   Skip pages whose Status is draft/archived/disabled.
+   Skip pages whose Status is draft/archived/disabled. Page through every result;
+   stopping at the first batch silently hides whatever did not fit.
 3. **Match and fetch** as in Steps 1–3 above.
 
 Only re-query when the request might match a skill. Do not query on every turn.

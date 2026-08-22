@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest a capability the plugin does not have.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: use-case
+    attributes:
+      label: What are you trying to do?
+      description: >
+        The workflow, not the feature. "I keep skills for three different clients in
+        one database and want only one client's skills loaded at a time" is more
+        useful than "add a filter option".
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What do you do today instead?
+      description: >
+        Including "nothing, I gave up". If a config key gets you part of the way
+        (`excluded_status`, `excluded_pages`, `properties`, `injection`), say where
+        it falls short.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: runtimes
+    attributes:
+      label: Which runtimes does this need to work in?
+      multiple: true
+      options:
+        - Claude Code (the plugin)
+        - claude.ai (the web variant skill)
+        - Notion AI / Notion Agents
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: Sketches of the config or command shape you had in mind are welcome.

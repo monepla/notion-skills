@@ -1,0 +1,72 @@
+name: Bug report
+description: Something in the plugin does not behave as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not paste Notion tokens, integration secrets, or the contents of
+        private skill pages. Page IDs and database IDs identify your workspace —
+        redact them if that matters to you.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead.
+      placeholder: |
+        I ran /notion-skills:setup with my database URL.
+        Expected: the registry to be built.
+        Got: "Registry came out empty".
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: transport
+    attributes:
+      label: How does the plugin reach Notion?
+      description: The `transport` line in `~/.claude/notion-skills/config.json`, or what you have set up.
+      options:
+        - token (NOTION_API_TOKEN is set)
+        - ntn (the Notion CLI)
+        - mcp (the Notion MCP connector only)
+        - not sure
+    validations:
+      required: true
+
+  - type: input
+    id: versions
+    attributes:
+      label: Plugin version, Claude Code version, Node version, OS
+      description: "`claude plugin list`, `claude --version`, `node --version`."
+      placeholder: notion-skills 0.3.0 / Claude Code 2.x / Node 22.11.0 / macOS 15
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Relevant output
+      description: >
+        Whatever the failing command printed. `node <plugin>/scripts/setup.mjs --dry-run --json <your DB URL>`
+        reports what it would do without writing anything. This is automatically formatted as code.
+      render: shell
+
+  - type: textarea
+    id: schema
+    attributes:
+      label: Database columns
+      description: >
+        The column names and types of your skills database, if the problem could
+        be schema-related. Names only — no page contents.

@@ -58,9 +58,12 @@ Query the database over the Notion MCP connector and **page through every result
 (do not stop at the first batch):
 
 \`\`\`
-SELECT "${props.name}", "${props.trigger}", "${props.status}", "${props.category}", "${props.runtime}"
+SELECT id, "${props.name}", "${props.trigger}", "${props.status}", "${props.category}", "${props.runtime}"
 FROM "collection://${ds}"
 \`\`\`
+
+\`id\` is not optional: every later step needs it — excluding pages, linking the
+list, and fetching the matched page all key off it.
 
 Exclude a page if:
 - its ${props.status} is one of: ${excluded}, or

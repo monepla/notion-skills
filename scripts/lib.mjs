@@ -84,14 +84,123 @@ export function selectName(property) {
   );
 }
 
+/** Collapse an already-flat value (MCP rows) to a trimmed string. */
+function scalar(value) {
+  if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) return value.map(scalar).filter(Boolean).join(', ');
+  if (typeof value === 'object') return scalar(value.name ?? value.plain_text ?? '');
+  return String(value).replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * A REST page object carries Notion property objects (`{type, title|select|…}`);
+ * an MCP `notion-query-data-sources` row carries plain scalars keyed by column
+ * name. Telling them apart lets one renderer serve every transport.
+ */
+export function isRestPage(raw) {
+  if (raw?.object === 'page') return true;
+  const props = raw?.properties;
+  if (!props || typeof props !== 'object' || Array.isArray(props)) return false;
+  return Object.values(props).some((value) => value && typeof value === 'object' && typeof value.type === 'string');
+}
+
+/**
+ * Normalize one row — REST page object or MCP query row — into the fields the
+ * registry needs. Returns null when the row carries no page id, because a
+ * registry line without an id can never be fetched again.
+ */
+export function normalizeRow(raw, properties) {
+  if (!raw || typeof raw !== 'object') return null;
+  const id = typeof raw.id === 'string' ? raw.id.trim() : '';
+  if (!id) return null;
+
+  const read = isRestPage(raw)
+    ? {
+        text: (key) => plain(raw.properties?.[key]),
+        choice: (key) => selectName(raw.properties?.[key]),
+      }
+    : {
+        text: (key) => scalar(raw[key]),
+        choice: (key) => scalar(raw[key]),
+      };
+
+  return {
+    id,
+    name: read.text(properties.name),
+    trigger: read.text(properties.trigger),
+    status: read.choice(properties.status),
+    category: read.choice(properties.category),
+    runtime: read.choice(properties.runtime),
+  };
+}
+
+/**
+ * Unwrap whatever the caller handed us into an array of rows.
+ *
+ * Accepts a bare array, a Notion REST response (`{results: […]}`), or the MCP
+ * query result (same key). `has_more: true` is refused rather than silently
+ * writing a short registry: a truncated registry looks exactly like a complete
+ * one, and the missing skills simply stop routing.
+ */
+export function rowsFromPayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Expected a JSON array of rows or an object with a "results" array.');
+  }
+  if (!Array.isArray(payload.results)) {
+    throw new Error(`Expected a "results" array; got keys: ${Object.keys(payload).join(', ') || '(none)'}.`);
+  }
+  if (payload.has_more === true) {
+    throw new Error(
+      'The supplied rows are only the first page ("has_more": true). Fetch the remaining pages and ' +
+        'concatenate them before syncing — a partial registry silently stops routing the missing skills.',
+    );
+  }
+  return payload.results;
+}
+
+/** 32-hex Notion id out of a URL, a dashed UUID, or a bare id. */
+export function parseNotionId(input) {
+  const text = String(input ?? '').trim();
+  if (!text) return '';
+
+  // Drop the query string first. The URL Notion puts on the clipboard ends in
+  // `?v=<view id>`, and a view id is 32 hex too — searching the whole string
+  // would configure the plugin against the view instead of the database.
+  const path = text.split(/[?#]/)[0];
+
+  // A dashed UUID is unambiguous, so prefer it.
+  const dashedIds = path.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/g);
+  if (dashedIds) return dashless(dashedIds[dashedIds.length - 1]).toLowerCase();
+
+  // Otherwise a bare 32-hex run, bounded on both sides: without the boundaries a
+  // page title that happens to be hex (".../Cafe-Babe-<id>") merges with the id
+  // and the match slides off by however many characters the title contributed.
+  const bareIds = path.match(/(?<![0-9a-fA-F])[0-9a-fA-F]{32}(?![0-9a-fA-F])/g);
+  return bareIds ? bareIds[bareIds.length - 1].toLowerCase() : '';
+}
+
+/** 32-char dashless id → 36-char dashed UUID (the form Notion's API expects). */
+export function dashed(id) {
+  const raw = dashless(String(id).trim().toLowerCase());
+  if (raw.length !== 32) return String(id).trim();
+  return [raw.slice(0, 8), raw.slice(8, 12), raw.slice(12, 16), raw.slice(16, 20), raw.slice(20)].join('-');
+}
+
 /** 36-char dashed UUID → 32-char dashless (registry format). */
 export function dashless(id) {
   return id.replace(/-/g, '');
 }
 
-/** Set of excluded page IDs, normalized so dashed and dashless both match. */
+/**
+ * Set of excluded page IDs, normalized so dashed, dashless and a pasted page URL
+ * all match. Anything unrecognisable is kept as-is so it still shows up in the
+ * "excluded_pages entry not found" warning rather than vanishing.
+ */
 export function excludedPageIds(config) {
-  return new Set((config.excluded_pages ?? []).map((id) => dashless(String(id).trim().toLowerCase())));
+  return new Set(
+    (config.excluded_pages ?? []).map((id) => parseNotionId(id) || dashless(String(id).trim().toLowerCase())),
+  );
 }
 
 /**
