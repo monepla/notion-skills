@@ -1,7 +1,7 @@
 {
   "name": "notion-skills",
   "version": "0.3.1",
-  "description": "Turn your Notion database into a live skill store for Claude Code. A SessionStart hook injects an index of every skill page, and the page itself is fetched at use time — no per-skill install step, and no local copy to go stale. Reads Notion with your own credentials; no telemetry.",
+  "description": "Turn your Notion database into a live skill store for Claude Code. A SessionStart hook injects an index of every skill page, a UserPromptSubmit hook names the pages a prompt matches, and the page itself is fetched at use time — no per-skill install step, and no local copy to go stale. Reads Notion with your own credentials; prompts are matched on your machine and never sent; no telemetry.",
   "author": {
     "name": "monepla"
   },
