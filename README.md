@@ -44,7 +44,7 @@ This plugin makes a different trade:
 | Adding a skill | Install each page you want | Add the page — the whole database is the store |
 | On disk | The skill is saved to your computer | No skill copy is written; only an index cache |
 | Getting the content | From the installed copy | Fetched from the page at use time |
-| Invoking | `/skill-name` | Trigger keywords, matched from the injected index |
+| Invoking | `/skill-name` | Trigger keywords, matched from the injected index and against each prompt |
 | Attached files | Included | Page body only |
 | Agents | Claude Code, Codex, Cursor, Gemini, Grok | Claude Code (plus Notion AI and claude.ai, below) |
 
@@ -60,7 +60,7 @@ size, and `"injection": "off"` to turn it off).
 ## Requirements
 
 - Claude Code with plugin support
-- **Node.js 18+** on `PATH` — the SessionStart hook and the sync script run on it
+- **Node.js 18+** on `PATH` — the hooks and the sync script run on it
 - A Notion database you can edit, plus one of the three auth options below
 
 ## Install
@@ -155,6 +155,11 @@ The token is never written to any file by this plugin.
 | `notion-skill-creator` | "Turn this into a skill" — creates the page and registers it |
 | `web-skill` | Builds the standalone claude.ai router described below |
 
+Your skills are Notion pages, not installed skills: their names are not Skill tool
+names or slash commands. When a prompt matches one, the prompt carries a short
+`[notion-skills]` note with the page id, so the page is fetched on the first try —
+even when the session-start registry reached the model only as a preview.
+
 ## Configuration (`~/.claude/notion-skills/config.json`)
 
 Written by `setup`. Only `data_source_id` is required — every other key falls
@@ -166,6 +171,7 @@ back to the default shown.
   "transport": "auto",       // auto | token | ntn | mcp
   "ttl_hours": 24,           // cache age that triggers a background refresh
   "injection": "session",    // session | off (off = router queries Notion on demand)
+  "prompt_match": "on",      // on | off — note the skills a prompt matches (matched locally)
   "properties": {            // map logical fields → your database's property names
     "name": "Name",
     "trigger": "Trigger",
@@ -183,6 +189,9 @@ trigger keywords. Measured on a 66-skill database: 9.9 KB, roughly 2.5k tokens
 per session (Japanese text; a mostly-English registry of the same size is
 smaller). A typical 20-skill store lands well under 1k. Set
 `"injection": "off"` to trade that for an on-demand Notion query.
+
+The per-prompt note adds nothing to a prompt that matches no skill, and at most
+three skill lines plus three lines of instructions to one that does.
 
 ## Web variant (claude.ai)
 
@@ -243,6 +252,7 @@ Guidelines that make skills portable:
 | No `[notion-skills]` line at session start | Is Node.js on `PATH`? Is the plugin enabled (`claude plugin list`)? Hooks load at session start — open a new session |
 | "Not configured yet" | Run `/notion-skills:setup <DB URL>` |
 | A new Notion skill isn't routed | `Status` not in `excluded_status`? Then `/notion-skills:sync` (or wait for the TTL refresh) |
+| `Unknown skill: <name>` right after asking for a Notion skill | The model passed a registry name to the Skill tool. A matching prompt should carry a `[notion-skills]` note with the page id: update the plugin, open a new session, and check `prompt_match` is not `off` |
 | Fetching a skill 404s | The registry is stale — `/notion-skills:sync` |
 | `no "Name" column (its columns: …)` | Your title column has a different name. Re-run setup with `--property name=<that column>` |
 | `Every one of the N row(s) was filtered out` | Your `Status` values collide with `excluded_status` (default `archived`, `draft`, `disabled`) |
@@ -254,7 +264,7 @@ Guidelines that make skills portable:
 
 Escape hatches:
 
-- `NOTION_SKILLS_DISABLE=1` — skip registry injection for a session
+- `NOTION_SKILLS_DISABLE=1` — skip registry injection and prompt matching for a session
 - `NOTION_SKILLS_HOME=/path` — use a different state directory
 - `NOTION_VERSION=…` — override the Notion API version used by the sync script
 - `claude plugin uninstall notion-skills@notion-skills` — remove the plugin.
@@ -267,11 +277,12 @@ Escape hatches:
 | Network | `api.notion.com` only, to read your skills database. No telemetry, no analytics, no update check |
 | Notion writes | None. The scripts only `POST …/query` and `GET …/databases/{id}` |
 | Credentials | `NOTION_API_TOKEN` from your environment, or the `ntn` CLI's keychain token. Never written to disk, never sent anywhere but Notion |
-| Hooks | One `SessionStart`, which reads the two files in `~/.claude/notion-skills/` and prints the registry. No `UserPromptSubmit` / `PreToolUse` / `PostToolUse` hook — your prompts and tool calls are not observed |
+| Hooks | Two. `SessionStart` reads the two files in `~/.claude/notion-skills/` and prints the registry. `UserPromptSubmit` reads each prompt **on your machine**, compares it with `registry.md`, and prints a short note only when a skill matches — the prompt is not stored, logged or sent anywhere. No `PreToolUse` / `PostToolUse` hook — your tool calls are not observed |
 | Files | `~/.claude/notion-skills/` only (override with `NOTION_SKILLS_HOME`) |
 
 Opt out with `NOTION_SKILLS_DISABLE=1` (one session), `"injection": "off"` (no
-injection at all), or `"transport": "mcp"` (no background sync). Full detail in
+injection at all), `"prompt_match": "off"` (no per-prompt note), or
+`"transport": "mcp"` (no background sync). Full detail in
 [SECURITY.md](SECURITY.md).
 
 ## Security
@@ -319,6 +330,10 @@ from Notion AI" の推奨エージェント指示を参照）。
   データソース解決・スキーマ検査・config 書き込み・初回同期を1コマンドで行う
 - ページ**本文**の編集は即時反映（毎回ライブ取得）。名前・トリガー・Status の変更は
   自動同期（既定24h）か `/notion-skills:sync` で反映
+- スキル名は Skill ツール名・スラッシュコマンドではない。プロンプトがスキルに一致すると、
+  そのプロンプトにだけスキル名と page_id を数行添える（`UserPromptSubmit` フック）ので、
+  セッション開始時の一覧がプレビューしか届かなくても初手でページを取得できる。
+  照合はローカルで行い、プロンプトは保存も送信もしない。`"prompt_match": "off"` で無効化
 - 認証は `NOTION_API_TOKEN` / `ntn` CLI / Notion MCP コネクタの3系統で、`config.json` の
   `transport` で明示指定できる（`auto` は token → ntn の順）。MCP のみの環境では
   Claude が1回クエリして結果を `sync.mjs --from-json` に渡す（レジストリを手書きしない）。

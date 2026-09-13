@@ -24,6 +24,10 @@ export const DEFAULT_CONFIG = {
   // 'session' injects the registry at session start; 'off' disables injection
   // (the router skill then queries Notion directly via MCP).
   injection: 'session',
+  // 'on' notes the skills a prompt matches (name + page id) on that prompt only,
+  // matched against registry.md on this machine; 'off' disables it.
+  // injection: 'off' turns it off as well.
+  prompt_match: 'on',
   // Map of logical fields → property names in the user's database.
   properties: {
     name: 'Name',
@@ -229,4 +233,149 @@ export function parseSyncedAt(registryText) {
   if (!match) return null;
   const date = new Date(match[1]);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/**
+ * Parse a registry file back into rows — the inverse of renderRegistry.
+ * Lines without a 32-hex page id are skipped rather than guessed at: a row that
+ * cannot be fetched is not something to route a prompt to.
+ */
+export function parseRegistry(registryText) {
+  const rows = [];
+  for (const line of String(registryText ?? '').split('\n')) {
+    if (!line.trim() || line.startsWith('<!--')) continue;
+    const fields = line.split(/(?<!\\)\|/).map((field) => field.trim().replace(/\\\|/g, '|'));
+    if (fields.length < 5) continue;
+    const [name, id, runtime, category, ...trigger] = fields;
+    if (!name || !/^[0-9a-f]{32}$/i.test(id)) continue;
+    rows.push({ name, id: id.toLowerCase(), runtime, category, trigger: trigger.join(' | ') });
+  }
+  return rows;
+}
+
+// --- Matching a prompt against the registry ---------------------------------
+//
+// Runs on every prompt (hooks/user-prompt-submit.mjs), so it is plain string
+// work: no network, no model, no dependency.
+
+const LATIN = /^[\p{Script=Latin}\p{N}]+$/u;
+
+/** NFKC + lowercase, so full-width "ＳＥＯ" and "SEO" compare equal. */
+const fold = (text) => String(text ?? '').normalize('NFKC').toLowerCase();
+
+/** Letters and digits only: "update-submodules" → "updatesubmodules". */
+const compact = (text) => fold(text).replace(/[^\p{L}\p{N}]+/gu, '');
+
+/**
+ * Latin words. A Japanese prompt has no spaces, so splitting on non-letters
+ * would glue "pull" to the kana after it; take the Latin runs out instead.
+ */
+const latinWords = (text) => fold(text).match(/[\p{Script=Latin}\p{N}]+/gu) ?? [];
+
+/**
+ * Katakana and kanji runs. Hiragana is dropped on purpose: inside a keyword it is
+ * particles and okurigana — exactly what differs between a keyword
+ * ("サブモジュール更新") and how people type it ("サブモジュールを更新して").
+ */
+const cjkChunks = (text) => fold(text).match(/[\p{Script=Katakana}ー]+|\p{Script=Han}+/gu) ?? [];
+
+/** Trigger text → individual keywords (sync cuts long triggers with "…"). */
+export function triggerKeywords(trigger) {
+  return String(trigger ?? '')
+    .split(/[,、，;；／\n]/)
+    .map((keyword) => keyword.replace(/\s*(…|\.\.\.)\s*$/, '').trim())
+    .filter((keyword) => keyword && keyword !== '-');
+}
+
+function keywordMatches(keyword, typed) {
+  const key = compact(keyword);
+  if (!key) return false;
+  if (LATIN.test(key)) {
+    // Short Latin keywords only as whole words, or "seo" would match "seoul".
+    return key.length < 4 ? typed.words.includes(key) : typed.compact.includes(key);
+  }
+  if (key.length >= 2 && typed.compact.includes(key)) return true;
+  // A purely Japanese keyword typed with particles in between: every katakana /
+  // kanji run of it appears. Mixed keywords ("Notionにログ") do not get this.
+  const chunks = cjkChunks(keyword);
+  return (
+    chunks.length >= 2 &&
+    chunks.every((chunk) => chunk.length >= 2) &&
+    key.replace(/\p{Script=Hiragana}+/gu, '') === chunks.join('') &&
+    chunks.every((chunk) => typed.compact.includes(chunk))
+  );
+}
+
+function nameMatches(name, typed) {
+  const key = compact(name);
+  if (!key) return null;
+  if (LATIN.test(key) && key.length < 4) return typed.words.includes(key) ? 'exact' : null;
+  if (key.length >= 2 && typed.compact.includes(key)) return 'exact';
+  // "update modules" for a skill named update-submodules: every word of a
+  // multi-word Latin name is met by a typed word that equals it, or that
+  // contains / is contained in it with at least four letters on the short side.
+  const words = latinWords(name);
+  if (words.length < 2 || words.join('') !== key) return null;
+  const covered = words.every((word) =>
+    typed.words.some(
+      (seen) =>
+        seen === word ||
+        (Math.min(seen.length, word.length) >= 4 && (word.includes(seen) || seen.includes(word))),
+    ),
+  );
+  return covered ? 'words' : null;
+}
+
+/**
+ * Registry rows a prompt plausibly asks for, best first.
+ *
+ * A name hit outranks keyword hits, and keyword hits count up to three, so a
+ * skill with a long trigger list cannot crowd out an exact name. Ties keep
+ * registry order.
+ */
+export function matchSkills(prompt, rows, { limit = 3 } = {}) {
+  const typed = { compact: compact(prompt), words: latinWords(prompt) };
+  if (!typed.compact) return [];
+
+  const matches = [];
+  (rows ?? []).forEach((row, index) => {
+    const reasons = [];
+    let score = 0;
+
+    const byName = nameMatches(row.name, typed);
+    if (byName) {
+      score += byName === 'exact' ? 5 : 3;
+      reasons.push(`name "${row.name}"`);
+    }
+
+    const keywords = triggerKeywords(row.trigger).filter((keyword) => keywordMatches(keyword, typed));
+    if (keywords.length > 0) {
+      score += 2 * Math.min(keywords.length, 3);
+      reasons.push(`trigger ${keywords.slice(0, 3).map((keyword) => `"${keyword}"`).join(', ')}`);
+    }
+
+    if (score > 0) matches.push({ row, score, reasons, index });
+  });
+
+  matches.sort((a, b) => b.score - a.score || a.index - b.index);
+  return matches.slice(0, limit).map(({ row, score, reasons }) => ({ row, score, reasons }));
+}
+
+/**
+ * The note attached to a matching prompt. It carries the page id itself, so the
+ * page can be fetched even when the session-start registry arrived cut short,
+ * and it says outright that the names are not Skill tool names — a bare name is
+ * exactly what gets guessed into a Skill call.
+ */
+export function renderPromptMatches(matches) {
+  return [
+    "[notion-skills] This prompt may match skills in the user's Notion skill registry:",
+    ...matches.map(
+      ({ row, reasons }) =>
+        `- ${row.name} — page_id ${row.id} (runtime: ${row.runtime || 'any'}; matched ${reasons.join('; ')})`,
+    ),
+    'To run one, fetch its page by page_id (notion-fetch — Step 2 of the notion-skill-router skill) and follow the page content.',
+    'These names are Notion pages, not Skill tool names or slash commands: never pass them to the Skill tool.',
+    'If none of them is what the user is asking for, ignore this note.',
+  ].join('\n');
 }

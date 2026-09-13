@@ -1,5 +1,5 @@
 {
-  "description": "notion-skills — injects the user's Notion skill registry at session start and keeps the cache fresh",
+  "description": "notion-skills — injects the user's Notion skill registry at session start, keeps the cache fresh, and names the skill pages a prompt matches",
   "hooks": {
     "SessionStart": [
       {
@@ -9,6 +9,17 @@
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.mjs\"",
             "timeout": 10,
             "statusMessage": "Loading Notion skill registry"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/user-prompt-submit.mjs\"",
+            "timeout": 5
           }
         ]
       }

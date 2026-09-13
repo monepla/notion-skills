@@ -52,11 +52,17 @@ Stated plainly so you can check it against the code:
   keeps its token in your OS keychain. Your Notion credential is only ever sent
   to Notion. Nothing reads your keychain, `~/.aws`, `~/.ssh`, browser storage, or
   any credential belonging to another service.
-- **Hooks.** One, `SessionStart`. It reads `~/.claude/notion-skills/config.json`
-  and `registry.md` and prints the registry. It makes no network call itself; if
-  the cache is past `ttl_hours` it starts a detached `sync.mjs` for the *next*
-  session. There is no `UserPromptSubmit`, `PreToolUse` or `PostToolUse` hook —
-  the plugin does not observe your prompts or your tool calls.
+- **Hooks.** Two.
+  - `SessionStart` reads `~/.claude/notion-skills/config.json` and `registry.md`
+    and prints the registry. It makes no network call itself; if the cache is past
+    `ttl_hours` it starts a detached `sync.mjs` for the *next* session.
+  - `UserPromptSubmit` reads each prompt you submit, compares it with
+    `registry.md` on your machine, and — only when a skill matches — prints a
+    short note naming the skill and its page id. It makes no network call, starts
+    no process, and writes nothing: the prompt is not stored, logged or sent.
+    Turn it off with `"prompt_match": "off"`.
+  - There is no `PreToolUse` or `PostToolUse` hook — the plugin does not observe
+    your tool calls.
 - **State.** Everything user-specific stays in `~/.claude/notion-skills/`
   (override with `NOTION_SKILLS_HOME`). Nothing is written inside the plugin
   directory, and uninstalling leaves both that state and your Notion untouched.
@@ -65,8 +71,9 @@ Stated plainly so you can check it against the code:
 
 | | |
 |---|---|
-| `NOTION_SKILLS_DISABLE=1` | No injection for that session |
-| `"injection": "off"` in the config | No injection at all; the router queries Notion on demand |
+| `NOTION_SKILLS_DISABLE=1` | No injection and no prompt matching for that session |
+| `"injection": "off"` in the config | No injection at all (prompt matching included); the router queries Notion on demand |
+| `"prompt_match": "off"` in the config | Prompts are not read; the session-start registry is unchanged |
 | `"transport": "mcp"` in the config | No background sync; nothing runs unless you ask for it |
 | `claude plugin uninstall notion-skills@notion-skills` | Removes the plugin; your state and database remain |
 

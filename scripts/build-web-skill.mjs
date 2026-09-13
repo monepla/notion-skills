@@ -79,6 +79,9 @@ Prefer exact keyword hits, then fall back to semantic similarity with the name.
 If two match equally well, ask which one — a single short question listing only
 the candidates.
 
+Skill names in this database are Notion pages, not Skill tool names or slash
+commands — never pass one to the Skill tool. Fetch the page instead (Step 3).
+
 For "list my skills" style requests, present all active skills as a table
 (name / category / trigger) and link each as \`https://notion.so/<page_id>\`
 (the id with dashes removed). Never show bare page IDs.

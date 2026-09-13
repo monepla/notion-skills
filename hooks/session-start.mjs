@@ -75,6 +75,7 @@ function main() {
       `[notion-skills] The user's custom skill registry, synced from their Notion database ${staleNote}`.trimEnd() + '.',
       'When the user\'s request matches a skill name or trigger keywords below, use the',
       'notion-skill-router skill: fetch that Notion page by its ID and follow the page content as instructions.',
+      'These names are Notion pages, not Skill tool names or slash commands: never pass them to the Skill tool.',
       '<notion-skills-registry>',
       registry.trimEnd(),
       '</notion-skills-registry>',

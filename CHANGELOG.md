@@ -8,6 +8,27 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 Releases are tagged `notion-skills--v<version>` (the naming `claude plugin tag`
 expects). See [CONTRIBUTING.md](CONTRIBUTING.md#releasing) for the release steps.
 
+## [Unreleased]
+
+### Added
+
+- `hooks/user-prompt-submit.mjs` — a `UserPromptSubmit` hook that matches each
+  prompt against `registry.md` and, when skills match, attaches a short note with
+  their names and page ids (at most three). Observed failure it fixes: with a
+  large registry the session-start block reaches the model only as a preview, so
+  "update modules" was guessed into a Skill tool call for `update-submodules` and
+  failed with "Unknown skill". The note carries the page id, so the page can be
+  fetched on the first try whatever part of the registry reached the context.
+  The prompt is matched on the user's machine and never stored or sent.
+- `prompt_match` config key (`on` by default, `off` to disable). `injection: off`
+  and `NOTION_SKILLS_DISABLE` turn it off too.
+
+### Changed
+
+- The session-start block, the router skill and the web variant now say that
+  registry names are Notion pages, not Skill tool names, and the router says to
+  look in `registry.md` when the block it can see is cut short.
+
 ## [0.3.1] — 2026-08-22
 
 Positioning only — no behaviour change, no code touched.

@@ -36,10 +36,20 @@ If there is no registry block in context, fall back to querying Notion directly
 
 ## Step 1: Match
 
+A prompt that matches the registry arrives with a `[notion-skills]` note listing
+the matching skills and their page ids. When that note is there, start from it.
+
+Registry names are Notion pages, not Skill tool names or slash commands — never
+pass one to the Skill tool.
+
 Compare the user's request against skill names and trigger keywords.
 Prefer exact keyword hits; fall back to semantic similarity with the skill name.
 If two or more skills match equally well, ask the user which one they mean —
 one short question listing only the matching candidates.
+
+The registry block can reach you cut short: a large one arrives as a preview.
+If the skill you need is not in the part you can see, look it up in
+`~/.claude/notion-skills/registry.md` before concluding it does not exist.
 
 ## Step 2: Fetch the skill page
 
