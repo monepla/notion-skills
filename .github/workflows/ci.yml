@@ -10,18 +10,26 @@ permissions:
 
 jobs:
   test:
+    # Keep the job names "test (18)" / "test (20)" / "test (22)" even though 22 now
+    # installs an exact patch version below.
+    name: test (${{ matrix.node }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         # 18 is the floor the README promises; 22 is what most users run.
         node: ['18', '20', '22']
+        include:
+          # Pin 22 to the 2026-10-21 security release (PRJ-3-2351). A bare '22' can
+          # resolve to an older 22.x that is already in the runner's tool cache.
+          - node: '22'
+            node-version: '22.23.4'
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
+          node-version: ${{ matrix.node-version || matrix.node }}
 
       - name: Run tests
         # No dependencies and no network: every test either works on fixtures or
